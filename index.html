@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Cst Linux</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+<style>
+html,body{
+  margin:0;
+  width:100%;
+  height:100%;
+  background:#000;
+  color:#fff;
+  font-family: monospace;
+  overflow:hidden;
+}
+
+/* ===== LOGIN ===== */
+#login{
+  position:absolute;
+  inset:0;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  gap:10px;
+}
+#login input{
+  width:260px;
+  background:#000;
+  color:#fff;
+  border:1px solid #555;
+  padding:8px;
+  font-family:monospace;
+}
+#login button{
+  width:260px;
+  background:#000;
+  color:#fff;
+  border:1px solid #888;
+  padding:8px;
+}
+
+/* ===== TERMINAL ===== */
+#top{
+  height:30px;
+  border-bottom:1px solid #444;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:0 6px;
+}
+button{
+  background:#000;
+  color:#fff;
+  border:1px solid #555;
+  font-size:10px;
+  padding:2px 6px;
+}
+#terminal{
+  position:absolute;
+  inset:0;
+  display:none;
+  flex-direction:column;
+}
+#out{
+  flex:1;
+  padding:6px;
+  overflow:auto;
+  white-space:pre-wrap;
+  font-size:11px;
+}
+#cmd{
+  background:#000;
+  color:#fff;
+  border:none;
+  outline:none;
+  padding:10px;
+  font-size:16px;
+}
+
+/* ===== DESKTOP ===== */
+#desktop{
+  position:absolute;
+  inset:30px 0 0 0;
+  display:none;
+  padding:10px;
+}
+.icon{
+  width:64px;
+  text-align:center;
+  font-size:10px;
+}
+.icon img{
+  width:40px;
+}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login">
+  <h3>Login GitHub Gist</h3>
+  <input id="token" placeholder="GitHub Token">
+  <input id="gist" placeholder="Gist ID">
+  <button onclick="login()">Login</button>
+  <div id="loginMsg"></div>
+</div>
+
+<!-- TERMINAL -->
+<div id="terminal">
+  <div id="top">
+    <button onclick="showTerminal()">Terminal</button>
+    <button onclick="showDesktop()">Desktop</button>
+  </div>
+  <div id="out">Linux Desktop
+Type: help basic</div>
+  <input id="cmd" placeholder="type command...">
+</div>
+
+<!-- DESKTOP -->
+<div id="desktop">
+  <div class="icon" onclick="showTerminal()">
+    <img src="https://upload.wikimedia.org/wikipedia/commons/a/af/Tux.png">
+    <div>Terminal</div>
+  </div>
+</div>
+
+<script>
+/* ===== STATE ===== */
+let TOKEN="", GIST="";
+let UID = localStorage.uid || ("u_"+Math.random().toString(36).slice(2));
+localStorage.uid = UID;
+
+let customCmd={};
+
+/* ===== ELEMENT ===== */
+const loginBox=document.getElementById("login");
+const loginMsg=document.getElementById("loginMsg");
+const terminal=document.getElementById("terminal");
+const desktop=document.getElementById("desktop");
+const out=document.getElementById("out");
+const cmd=document.getElementById("cmd");
+
+/* ===== LOGIN ===== */
+function login(){
+  TOKEN=document.getElementById("token").value.trim();
+  GIST=document.getElementById("gist").value.trim();
+  if(!TOKEN||!GIST){
+    loginMsg.textContent="token & gist required";
+    return;
+  }
+  fetch("https://api.github.com/gists/"+GIST,{
+    headers:{Authorization:"token "+TOKEN}
+  })
+  .then(r=>{
+    if(!r.ok) throw "invalid";
+    return r.json();
+  })
+  .then(d=>{
+    loginBox.style.display="none";
+    terminal.style.display="flex";
+    loadBackup(d);
+  })
+  .catch(()=>{
+    loginMsg.textContent="login failed";
+  });
+}
+
+/* ===== UI ===== */
+function showTerminal(){
+  terminal.style.display="flex";
+  desktop.style.display="none";
+  cmd.focus();
+}
+function showDesktop(){
+  terminal.style.display="none";
+  desktop.style.display="block";
+}
+function print(t){
+  out.textContent+="\n"+t;
+  out.scrollTop=out.scrollHeight;
+}
+
+/* ===== COMMAND ===== */
+cmd.onkeydown=e=>{
+  if(e.key==="Enter"){
+    run(cmd.value.trim());
+    cmd.value="";
+  }
+};
+
+function run(c){
+  if(!c) return;
+  print("> "+c);
+  let a=c.split(" ");
+
+  if(customCmd[a[0]]){
+    try{eval(customCmd[a[0]])}
+    catch{print("error")}
+    return;
+  }
+
+  if(a[0]==="help"){
+    print("help clear pkg desktop terminal");
+    return;
+  }
+
+  if(a[0]==="clear"){out.textContent="";return;}
+  if(a[0]==="desktop"){showDesktop();return;}
+  if(a[0]==="terminal"){showTerminal();return;}
+
+  if(a[0]==="pkg"){
+    if(a[1]==="import")importCmd();
+    if(a[1]==="list")listCmd();
+    return;
+  }
+
+  print("command not found");
+}
+
+/* ===== PKG ===== */
+function importCmd(){
+  let n=prompt("command name:");
+  let c=prompt("js code:");
+  if(!n||!c)return;
+  customCmd[n]=c;
+  save();
+  print("added "+n);
+}
+function listCmd(){
+  Object.keys(customCmd).forEach(c=>print("- "+c));
+}
+
+/* ===== BACKUP ===== */
+function save(){
+  fetch("https://api.github.com/gists/"+GIST,{
+    method:"PATCH",
+    headers:{
+      Authorization:"token "+TOKEN,
+      "Content-Type":"application/json"
+    },
+    body:JSON.stringify({
+      files:{
+        "backup.json":{
+          content:JSON.stringify({[UID]:customCmd})
+        }
+      }
+    })
+  });
+}
+function loadBackup(d){
+  if(d.files && d.files["backup.json"]){
+    let all=JSON.parse(d.files["backup.json"].content||"{}");
+    if(all[UID]) customCmd=all[UID];
+    print("[restored]");
+  }
+}
+</script>
+</body>
+</html>
